@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>卡拉OK · 歌詞播放器</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #000; }
+  body {
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+    color: #fff; display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+    overflow: hidden; -webkit-text-size-adjust: 100%;
+    user-select: none; -webkit-user-select: none;
+  }
+  header { display: flex; align-items: center; justify-content: space-between;
+           padding: 14px 20px 6px; flex-shrink: 0; }
+  header h1 { font-size: 17px; font-weight: 600; letter-spacing: 1px;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pickBtn, #fsBtn { background: none; border: 1px solid rgba(255,255,255,.35); color: #fff;
+             border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+
+  /* ---------- lyrics ---------- */
+  #lyricsWrap { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 0 24px; scroll-behavior: smooth;
+    mask-image: linear-gradient(transparent 0, #000 10%, #000 84%, transparent 100%);
+    -webkit-mask-image: linear-gradient(transparent 0, #000 10%, #000 84%, transparent 100%); }
+  .line { padding: 14px 0; font-size: clamp(19px, 6.2vw, 34px); font-weight: 600;
+    line-height: 1.5; color: rgba(255,255,255,.28); text-align: center;
+    transition: color .35s, transform .35s, opacity .35s, font-size .35s; transform-origin: center; cursor: pointer; }
+  .line.gap { color: rgba(255,255,255,.15); letter-spacing: 6px; }
+  .line.active { color: #fff; font-size: clamp(28px, 9vw, 52px); font-weight: 700; }
+
+  /* ---------- controls ---------- */
+  #controls { flex-shrink: 0; padding: 10px 20px 18px;
+              background: linear-gradient(transparent, rgba(0,0,0,.9) 30%); }
+  #bar { width: 100%; appearance: none; -webkit-appearance: none; height: 4px; border-radius: 2px;
+         background: rgba(255,255,255,.2); outline: none; cursor: pointer; }
+  #bar::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 14px; height: 14px;
+         border-radius: 50%; background: #fff; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; gap: 10px; }
+  #time { font-size: 11px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; min-width: 86px; }
+  #play { width: 72px; height: 72px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.7);
+    background: transparent; color: #fff; font-size: 26px; display: flex; align-items: center;
+    justify-content: center; cursor: pointer; transition: transform .15s, background .2s; flex-shrink: 0; }
+  #play:active { transform: scale(.92); background: rgba(255,255,255,.12); }
+  .chips { display: flex; gap: 8px; }
+  .chip { padding: 8px 12px; border-radius: 999px; font-size: 13px; min-width: 52px;
+    border: 1px solid rgba(255,255,255,.3); color: rgba(255,255,255,.55);
+    background: transparent; cursor: pointer; transition: all .25s; }
+  .chip.on { background: #fff; color: #000; border-color: #fff; font-weight: 600; }
+  #err { display: none; text-align: center; color: #ff6b6b; font-size: 13px; padding: 8px 0; }
+
+  /* ---------- song picker sheet ---------- */
+  #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.65); opacity: 0;
+    pointer-events: none; transition: opacity .25s; z-index: 10; }
+  #sheet.show { opacity: 1; pointer-events: auto; }
+  #sheetBox { position: absolute; left: 0; right: 0; bottom: 0; max-height: 70%;
+    background: #111; border-radius: 18px 18px 0 0; transform: translateY(100%);
+    transition: transform .3s cubic-bezier(.32,.72,.33,1); display: flex; flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom); }
+  #sheet.show #sheetBox { transform: translateY(0); }
+  #sheetBox .head { display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px 10px; font-size: 15px; font-weight: 600; color: rgba(255,255,255,.85); }
+  #sheetBox .head button { background: none; border: none; color: rgba(255,255,255,.5);
+    font-size: 18px; padding: 4px 8px; cursor: pointer; }
+  #songList { list-style: none; overflow-y: auto; padding-bottom: 14px; }
+  #songList li { padding: 15px 20px; font-size: 16px; color: rgba(255,255,255,.75); cursor: pointer; }
+  #songList li:active { background: rgba(255,255,255,.08); }
+  #songList li.cur { color: #fff; font-weight: 600; }
+
+  /* ---------- landscape: much bigger lyrics, chrome becomes overlay ---------- */
+  @media (orientation: landscape) {
+    body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+    header { position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+             background: linear-gradient(#000, transparent); padding: 8px 20px 20px; }
+    #controls { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; }
+    #lyricsWrap { padding: 64px 4vw 138px; }
+    .line { font-size: clamp(20px, 6vh, 38px); padding: 8px 0; }
+    .line.active { font-size: clamp(34px, 12vh, 76px); }
+    #play { width: 54px; height: 54px; font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">載入中…</h1>
+    <div style="display:flex;gap:8px">
+      <button id="fsBtn" hidden>⛶</button>
+      <button id="pickBtn">☰ 選歌</button>
+    </div>
+  </header>
+
+  <div id="lyricsWrap"><div id="lyrics"></div></div>
+
+  <div id="controls">
+    <div id="err">⚠️ 無法載入音檔 — 請確認此頁面與 MP3 在同一資料夾／同一網址</div>
+    <div class="chips" style="margin-bottom:8px">
+      <button class="chip" id="keyDown">♭ −1</button>
+      <button class="chip" id="keyLbl">原調</button>
+      <button class="chip" id="keyUp">♯ +1</button>
+      <span style="flex:1"></span>
+      <button class="chip" id="speedBtn">1×</button>
+      <button class="chip" id="loopBtn">🔁 循環</button>
+    </div>
+    <input type="range" id="bar" min="0" max="1000" value="0">
+    <div class="row">
+      <span id="time">0:00 / 0:00</span>
+      <button id="play" aria-label="play/pause">▶</button>
+      <span style="min-width:86px"></span>
+    </div>
+  </div>
+
+  <div id="sheet">
+    <div id="sheetBox">
+      <div class="head"><span>選歌</span><button id="closeSheet">✕</button></div>
+      <ul id="songList"></ul>
+      <div style="display:flex;gap:8px;align-items:center;padding:12px 20px 16px;border-top:1px solid rgba(255,255,255,.12)">
+        <span style="font-size:13px;color:rgba(255,255,255,.6)">歌詞同步</span>
+        <button class="chip" id="lyrMinus">−</button>
+        <span id="lyrOffLbl" style="font-size:13px;min-width:56px;text-align:center">0.00s</span>
+        <button class="chip" id="lyrPlus">+</button>
+        <button class="chip" id="lyrReset">重設</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/**
+ * Minified by jsDelivr using Terser v5.39.0.
+ * Original file: /npm/soundtouchjs@0.1.30/dist/soundtouch.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+class FifoSampleBuffer{constructor(){this._vector=new Float32Array,this._position=0,this._frameCount=0}get vector(){return this._vector}get position(){return this._position}get startIndex(){return 2*this._position}get frameCount(){return this._frameCount}get endIndex(){return 2*(this._position+this._frameCount)}clear(){this.receive(this._frameCount),this.rewind()}put(t){this._frameCount+=t}putSamples(t,e,i=0){const s=2*(e=e||0);i>=0||(i=(t.length-s)/2);const r=2*i;this.ensureCapacity(i+this._frameCount);const o=this.endIndex;this.vector.set(t.subarray(s,s+r),o),this._frameCount+=i}putBuffer(t,e,i=0){e=e||0,i>=0||(i=t.frameCount-e),this.putSamples(t.vector,t.position+e,i)}receive(t){t>=0&&!(t>this._frameCount)||(t=this.frameCount),this._frameCount-=t,this._position+=t}receiveSamples(t,e=0){const i=2*e,s=this.startIndex;t.set(this._vector.subarray(s,s+i)),this.receive(e)}extract(t,e=0,i=0){const s=this.startIndex+2*e,r=2*i;t.set(this._vector.subarray(s,s+r))}ensureCapacity(t=0){const e=parseInt(2*t);if(this._vector.length<e){const t=new Float32Array(e);t.set(this._vector.subarray(this.startIndex,this.endIndex)),this._vector=t,this._position=0}else this.rewind()}ensureAdditionalCapacity(t=0){this.ensureCapacity(this._frameCount+t)}rewind(){this._position>0&&(this._vector.set(this._vector.subarray(this.startIndex,this.endIndex)),this._position=0)}}class AbstractFifoSamplePipe{constructor(t){t?(this._inputBuffer=new FifoSampleBuffer,this._outputBuffer=new FifoSampleBuffer):this._inputBuffer=this._outputBuffer=null}get inputBuffer(){return this._inputBuffer}set inputBuffer(t){this._inputBuffer=t}get outputBuffer(){return this._outputBuffer}set outputBuffer(t){this._outputBuffer=t}clear(){this._inputBuffer.clear(),this._outputBuffer.clear()}}class RateTransposer extends AbstractFifoSamplePipe{constructor(t){super(t),this.reset(),this._rate=1}set rate(t){this._rate=t}reset(){this.slopeCount=0,this.prevSampleL=0,this.prevSampleR=0}clone(){const t=new RateTransposer;return t.rate=this._rate,t}process(){const t=this._inputBuffer.frameCount;this._outputBuffer.ensureAdditionalCapacity(t/this._rate+1);const e=this.transpose(t);this._inputBuffer.receive(),this._outputBuffer.put(e)}transpose(t=0){if(0===t)return 0;const e=this._inputBuffer.vector,i=this._inputBuffer.startIndex,s=this._outputBuffer.vector,r=this._outputBuffer.endIndex;let o=0,u=0;for(;this.slopeCount<1;)s[r+2*u]=(1-this.slopeCount)*this.prevSampleL+this.slopeCount*e[i],s[r+2*u+1]=(1-this.slopeCount)*this.prevSampleR+this.slopeCount*e[i+1],u+=1,this.slopeCount+=this._rate;if(this.slopeCount-=1,1!==t)t:for(;;){for(;this.slopeCount>1;)if(this.slopeCount-=1,o+=1,o>=t-1)break t;const h=i+2*o;s[r+2*u]=(1-this.slopeCount)*e[h]+this.slopeCount*e[h+2],s[r+2*u+1]=(1-this.slopeCount)*e[h+1]+this.slopeCount*e[h+3],u+=1,this.slopeCount+=this._rate}return this.prevSampleL=e[i+2*t-2],this.prevSampleR=e[i+2*t-1],u}}class FilterSupport{constructor(t){this._pipe=t}get pipe(){return this._pipe}get inputBuffer(){return this._pipe.inputBuffer}get outputBuffer(){return this._pipe.outputBuffer}fillInputBuffer(){throw new Error("fillInputBuffer() not overridden")}fillOutputBuffer(t=0){for(;this.outputBuffer.frameCount<t;){const t=16384-this.inputBuffer.frameCount;if(this.fillInputBuffer(t),this.inputBuffer.frameCount<16384)break;this._pipe.process()}}clear(){this._pipe.clear()}}const noop=function(){};class SimpleFilter extends FilterSupport{constructor(t,e,i=noop){super(e),this.callback=i,this.sourceSound=t,this.historyBufferSize=22050,this._sourcePosition=0,this.outputBufferPosition=0,this._position=0}get position(){return this._position}set position(t){if(t>this._position)throw new RangeError("New position may not be greater than current position");const e=this.outputBufferPosition-(this._position-t);if(e<0)throw new RangeError("New position falls outside of history buffer");this.outputBufferPosition=e,this._position=t}get sourcePosition(){return this._sourcePosition}set sourcePosition(t){this.clear(),this._sourcePosition=t}onEnd(){this.callback()}fillInputBuffer(t=0){const e=new Float32Array(2*t),i=this.sourceSound.extract(e,t,this._sourcePosition);this._sourcePosition+=i,this.inputBuffer.putSamples(e,0,i)}extract(t,e=0){this.fillOutputBuffer(this.outputBufferPosition+e);const i=Math.min(e,this.outputBuffer.frameCount-this.outputBufferPosition);this.outputBuffer.extract(t,this.outputBufferPosition,i);const s=this.outputBufferPosition+i;return this.outputBufferPosition=Math.min(this.historyBufferSize,s),this.outputBuffer.receive(Math.max(s-this.historyBufferSize,0)),this._position+=i,i}handleSampleData(t){this.extract(t.data,4096)}clear(){super.clear(),this.outputBufferPosition=0}}const USE_AUTO_SEQUENCE_LEN=0,DEFAULT_SEQUENCE_MS=0,USE_AUTO_SEEKWINDOW_LEN=0,DEFAULT_SEEKWINDOW_MS=0,DEFAULT_OVERLAP_MS=8,_SCAN_OFFSETS=[[124,186,248,310,372,434,496,558,620,682,744,806,868,930,992,1054,1116,1178,1240,1302,1364,1426,1488,0],[-100,-75,-50,-25,25,50,75,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[-20,-15,-10,-5,5,10,15,20,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[-4,-3,-2,-1,1,2,3,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],AUTOSEQ_TEMPO_LOW=.5,AUTOSEQ_TEMPO_TOP=2,AUTOSEQ_AT_MIN=125,AUTOSEQ_AT_MAX=50,AUTOSEQ_K=-50,AUTOSEQ_C=150,AUTOSEEK_AT_MIN=25,AUTOSEEK_AT_MAX=15,AUTOSEEK_K=-10/1.5,AUTOSEEK_C=25-.5*AUTOSEEK_K;class Stretch extends AbstractFifoSamplePipe{constructor(t){super(t),this._quickSeek=!0,this.midBufferDirty=!1,this.midBuffer=null,this.overlapLength=0,this.autoSeqSetting=!0,this.autoSeekSetting=!0,this._tempo=1,this.setParameters(44100,0,0,8)}clear(){super.clear(),this.clearMidBuffer()}clearMidBuffer(){this.midBufferDirty&&(this.midBufferDirty=!1,this.midBuffer=null)}setParameters(t,e,i,s){t>0&&(this.sampleRate=t),s>0&&(this.overlapMs=s),e>0?(this.sequenceMs=e,this.autoSeqSetting=!1):this.autoSeqSetting=!0,i>0?(this.seekWindowMs=i,this.autoSeekSetting=!1):this.autoSeekSetting=!0,this.calculateSequenceParameters(),this.calculateOverlapLength(this.overlapMs),this.tempo=this._tempo}set tempo(t){let e;this._tempo=t,this.calculateSequenceParameters(),this.nominalSkip=this._tempo*(this.seekWindowLength-this.overlapLength),this.skipFract=0,e=Math.floor(this.nominalSkip+.5),this.sampleReq=Math.max(e+this.overlapLength,this.seekWindowLength)+this.seekLength}get tempo(){return this._tempo}get inputChunkSize(){return this.sampleReq}get outputChunkSize(){return this.overlapLength+Math.max(0,this.seekWindowLength-2*this.overlapLength)}calculateOverlapLength(t=0){let e;e=this.sampleRate*t/1e3,e=e<16?16:e,e-=e%8,this.overlapLength=e,this.refMidBuffer=new Float32Array(2*this.overlapLength),this.midBuffer=new Float32Array(2*this.overlapLength)}checkLimits(t,e,i){return t<e?e:t>i?i:t}calculateSequenceParameters(){let t,e;this.autoSeqSetting&&(t=150+-50*this._tempo,t=this.checkLimits(t,50,125),this.sequenceMs=Math.floor(t+.5)),this.autoSeekSetting&&(e=AUTOSEEK_C+AUTOSEEK_K*this._tempo,e=this.checkLimits(e,15,25),this.seekWindowMs=Math.floor(e+.5)),this.seekWindowLength=Math.floor(this.sampleRate*this.sequenceMs/1e3),this.seekLength=Math.floor(this.sampleRate*this.seekWindowMs/1e3)}set quickSeek(t){this._quickSeek=t}clone(){const t=new Stretch;return t.tempo=this._tempo,t.setParameters(this.sampleRate,this.sequenceMs,this.seekWindowMs,this.overlapMs),t}seekBestOverlapPosition(){return this._quickSeek?this.seekBestOverlapPositionStereoQuick():this.seekBestOverlapPositionStereo()}seekBestOverlapPositionStereo(){let t,e,i,s=0;for(this.preCalculateCorrelationReferenceStereo(),t=0,e=Number.MIN_VALUE;s<this.seekLength;s+=1)i=this.calculateCrossCorrelationStereo(2*s,this.refMidBuffer),i>e&&(e=i,t=s);return t}seekBestOverlapPositionStereoQuick(){let t,e,i,s,r,o=0;for(this.preCalculateCorrelationReferenceStereo(),e=Number.MIN_VALUE,t=0,s=0,r=0;o<4;o+=1){let u=0;for(;_SCAN_OFFSETS[o][u]&&(r=s+_SCAN_OFFSETS[o][u],!(r>=this.seekLength));)i=this.calculateCrossCorrelationStereo(2*r,this.refMidBuffer),i>e&&(e=i,t=r),u+=1;s=t}return t}preCalculateCorrelationReferenceStereo(){let t,e,i=0;for(;i<this.overlapLength;i+=1)e=i*(this.overlapLength-i),t=2*i,this.refMidBuffer[t]=this.midBuffer[t]*e,this.refMidBuffer[t+1]=this.midBuffer[t+1]*e}calculateCrossCorrelationStereo(t,e){const i=this._inputBuffer.vector;t+=this._inputBuffer.startIndex;let s=0,r=2;const o=2*this.overlapLength;let u;for(;r<o;r+=2)u=r+t,s+=i[u]*e[r]+i[u+1]*e[r+1];return s}overlap(t){this.overlapStereo(2*t)}overlapStereo(t){const e=this._inputBuffer.vector;t+=this._inputBuffer.startIndex;const i=this._outputBuffer.vector,s=this._outputBuffer.endIndex;let r,o,u=0;const h=1/this.overlapLength;let n,a,f;for(;u<this.overlapLength;u+=1)o=(this.overlapLength-u)*h,n=u*h,r=2*u,a=r+t,f=r+s,i[f+0]=e[a+0]*n+this.midBuffer[r+0]*o,i[f+1]=e[a+1]*n+this.midBuffer[r+1]*o}process(){let t,e,i;if(null===this.midBuffer){if(this._inputBuffer.frameCount<this.overlapLength)return;this.midBuffer=new Float32Array(2*this.overlapLength),this._inputBuffer.receiveSamples(this.midBuffer,this.overlapLength)}for(;this._inputBuffer.frameCount>=this.sampleReq;){t=this.seekBestOverlapPosition(),this._outputBuffer.ensureAdditionalCapacity(this.overlapLength),this.overlap(Math.floor(t)),this._outputBuffer.put(this.overlapLength),e=this.seekWindowLength-2*this.overlapLength,e>0&&this._outputBuffer.putBuffer(this._inputBuffer,t+this.overlapLength,e);const s=this._inputBuffer.startIndex+2*(t+this.seekWindowLength-this.overlapLength);this.midBuffer.set(this._inputBuffer.vector.subarray(s,s+2*this.overlapLength)),this.skipFract+=this.nominalSkip,i=Math.floor(this.skipFract),this.skipFract-=i,this._inputBuffer.receive(i)}}}const testFloatEqual=function(t,e){return(t>e?t-e:e-t)>1e-10};class SoundTouch{constructor(){this.transposer=new RateTransposer(!1),this.stretch=new Stretch(!1),this._inputBuffer=new FifoSampleBuffer,this._intermediateBuffer=new FifoSampleBuffer,this._outputBuffer=new FifoSampleBuffer,this._rate=0,this._tempo=0,this.virtualPitch=1,this.virtualRate=1,this.virtualTempo=1,this.calculateEffectiveRateAndTempo()}clear(){this.transposer.clear(),this.stretch.clear()}clone(){const t=new SoundTouch;return t.rate=this.rate,t.tempo=this.tempo,t}get rate(){return this._rate}set rate(t){this.virtualRate=t,this.calculateEffectiveRateAndTempo()}set rateChange(t){this._rate=1+.01*t}get tempo(){return this._tempo}set tempo(t){this.virtualTempo=t,this.calculateEffectiveRateAndTempo()}set tempoChange(t){this.tempo=1+.01*t}set pitch(t){this.virtualPitch=t,this.calculateEffectiveRateAndTempo()}set pitchOctaves(t){this.pitch=Math.exp(.69314718056*t),this.calculateEffectiveRateAndTempo()}set pitchSemitones(t){this.pitchOctaves=t/12}get inputBuffer(){return this._inputBuffer}get outputBuffer(){return this._outputBuffer}calculateEffectiveRateAndTempo(){const t=this._tempo,e=this._rate;this._tempo=this.virtualTempo/this.virtualPitch,this._rate=this.virtualRate*this.virtualPitch,testFloatEqual(this._tempo,t)&&(this.stretch.tempo=this._tempo),testFloatEqual(this._rate,e)&&(this.transposer.rate=this._rate),this._rate>1?this._outputBuffer!=this.transposer.outputBuffer&&(this.stretch.inputBuffer=this._inputBuffer,this.stretch.outputBuffer=this._intermediateBuffer,this.transposer.inputBuffer=this._intermediateBuffer,this.transposer.outputBuffer=this._outputBuffer):this._outputBuffer!=this.stretch.outputBuffer&&(this.transposer.inputBuffer=this._inputBuffer,this.transposer.outputBuffer=this._intermediateBuffer,this.stretch.inputBuffer=this._intermediateBuffer,this.stretch.outputBuffer=this._outputBuffer)}process(){this._rate>1?(this.stretch.process(),this.transposer.process()):(this.transposer.process(),this.stretch.process())}}class WebAudioBufferSource{constructor(t){this.buffer=t,this._position=0}get dualChannel(){return this.buffer.numberOfChannels>1}get position(){return this._position}set position(t){this._position=t}extract(t,e=0,i=0){this.position=i;let s=this.buffer.getChannelData(0),r=this.dualChannel?this.buffer.getChannelData(1):this.buffer.getChannelData(0),o=0;for(;o<e;o++)t[2*o]=s[o+i],t[2*o+1]=r[o+i];return Math.min(e,s.length-i)}}const getWebAudioNode=function(t,e,i=noop,s=4096){const r=t.createScriptProcessor(s,2,2),o=new Float32Array(2*s);return r.onaudioprocess=t=>{let r=t.outputBuffer.getChannelData(0),u=t.outputBuffer.getChannelData(1),h=e.extract(o,s);i(e.sourcePosition),0===h&&e.onEnd();let n=0;for(;n<h;n++)r[n]=o[2*n],u[n]=o[2*n+1]},r},pad=function(t,e,i){return i=i||"0",(t+="").length>=e?t:new Array(e-t.length+1).join(i)+t},minsSecs=function(t){const e=Math.floor(t/60);return`${e}:${pad(parseInt(t-60*e),2)}`},onUpdate=function(t){const e=this.timePlayed,i=this.sampleRate;if(this.sourcePosition=t,this.timePlayed=t/i,e!==this.timePlayed){const t=new CustomEvent("play",{detail:{timePlayed:this.timePlayed,formattedTimePlayed:this.formattedTimePlayed,percentagePlayed:this.percentagePlayed}});this._node.dispatchEvent(t)}};class PitchShifter{constructor(t,e,i,s=noop){this._soundtouch=new SoundTouch;const r=new WebAudioBufferSource(e);this.timePlayed=0,this.sourcePosition=0,this._filter=new SimpleFilter(r,this._soundtouch,s),this._node=getWebAudioNode(t,this._filter,(t=>onUpdate.call(this,t)),i),this.tempo=1,this.rate=1,this.duration=e.duration,this.sampleRate=t.sampleRate,this.listeners=[]}get formattedDuration(){return minsSecs(this.duration)}get formattedTimePlayed(){return minsSecs(this.timePlayed)}get percentagePlayed(){return 100*this._filter.sourcePosition/(this.duration*this.sampleRate)}set percentagePlayed(t){this._filter.sourcePosition=parseInt(t*this.duration*this.sampleRate),this.sourcePosition=this._filter.sourcePosition,this.timePlayed=this.sourcePosition/this.sampleRate}get node(){return this._node}set pitch(t){this._soundtouch.pitch=t}set pitchSemitones(t){this._soundtouch.pitchSemitones=t}set rate(t){this._soundtouch.rate=t}set tempo(t){this._soundtouch.tempo=t}connect(t){this._node.connect(t)}disconnect(){this._node.disconnect()}on(t,e){this.listeners.push({name:t,cb:e}),this._node.addEventListener(t,(t=>e(t.detail)))}off(t=null){let e=this.listeners;t&&(e=e.filter((e=>e.name===t))),e.forEach((t=>{this._node.removeEventListener(t.name,(e=>t.cb(e.detail)))}))}}
+
+</script>
+<script>
+/* ============ app: native <audio> engine (iOS background-safe) ============
+   - playback: plain <audio> element → keeps playing in background / lock screen
+   - speed: audio.playbackRate (pitch-preserved natively)
+   - key: SoundTouch pre-rendered offline to a WAV blob, then played as normal audio */
+const PLAYLIST = [
+  { name: "歌曲 1",  file: "song1.mp3"  },
+  { name: "歌曲 2",  file: "song2.mp3"  },
+  { name: "歌曲 3",  file: "song3.mp3"  },
+  { name: "歌曲 4",  file: "song4.mp3"  },
+  { name: "歌曲 4F", file: "song4f.mp3" },
+];
+
+const wrap     = document.getElementById("lyricsWrap");
+const box      = document.getElementById("lyrics");
+const playBtn  = document.getElementById("play");
+const bar      = document.getElementById("bar");
+const timeEl   = document.getElementById("time");
+const titleEl  = document.getElementById("title");
+const errEl    = document.getElementById("err");
+const sheet    = document.getElementById("sheet");
+const listEl   = document.getElementById("songList");
+const speedBtn = document.getElementById("speedBtn");
+const loopBtn  = document.getElementById("loopBtn");
+const keyDown  = document.getElementById("keyDown");
+const keyUp    = document.getElementById("keyUp");
+const keyLbl   = document.getElementById("keyLbl");
+const lyrMinus = document.getElementById("lyrMinus");
+const lyrPlus  = document.getElementById("lyrPlus");
+const lyrReset = document.getElementById("lyrReset");
+const lyrLbl   = document.getElementById("lyrOffLbl");
+
+let songs = PLAYLIST.map(s => ({ ...s })), curSong = 0, lines = [], cur = -1, seeking = false, key = 0;
+let userScrollUntil = 0;
+const SPEEDS = [1, 1.25, 1.5, 0.75];
+let speedIdx = 0, loopOn = false, playing = false, lyrOff = 0, pendingSeek = 0;
+let renderToken = 0;
+const blobCache = {};                       // "file|key" → objectURL
+
+/* ---------- audio element ---------- */
+const audio = new Audio();
+audio.preload = "auto";
+audio.preservesPitch = true;
+if ("webkitPreservesPitch" in audio) audio.webkitPreservesPitch = true;
+
+let ctx = null;
+const getCtx = () => ctx || (ctx = new (window.AudioContext || window.webkitAudioContext)());
+async function decode(url) {
+  const ab = await (await fetch(url)).arrayBuffer();
+  return await new Promise((res, rej) => getCtx().decodeAudioData(ab, res, rej));
+}
+
+/* ---------- offline SoundTouch render → WAV blob ---------- */
+function toWav(L, R, sr) {
+  const n = L.length, buf = new ArrayBuffer(44 + n * 4), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, "RIFF"); v.setUint32(4, 36 + n * 4, true); ws(8, "WAVE"); ws(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true);
+  v.setUint16(34, 16, true); ws(36, "data"); v.setUint32(40, n * 4, true);
+  let o = 44;
+  for (let i = 0; i < n; i++) {
+    v.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true); o += 2;
+    v.setInt16(o, Math.max(-1, Math.min(1, R[i])) * 32767, true); o += 2;
+  }
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+async function renderKeyed(file, k, onProg) {
+  const st = new SoundTouch(); st.pitchSemitones = k;
+  const buffer = await decode(file);
+  const filter = new SimpleFilter(new WebAudioBufferSource(buffer), st);
+  const CH = 16384, chunk = new Float32Array(2 * CH);
+  const out = new Float32Array(2 * (buffer.length + CH)), sr = buffer.sampleRate;
+  let w = 0, n, done = 0;
+  while ((n = filter.extract(chunk, CH)) > 0) {
+    out.set(chunk.subarray(0, 2 * n), w); w += 2 * n; done += n;
+    if (onProg && (done & 65535) < CH) { onProg(done / buffer.length);
+      await new Promise(r => setTimeout(r)); }              // yield → progress paints
+  }
+  const frames = w / 2, L = new Float32Array(frames), R = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) { L[i] = out[2*i]; R[i] = out[2*i+1]; }
+  return toWav(L, R, sr);
+}
+
+/* ---------- transport ---------- */
+function fmt(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`; }
+const getPos = () => audio.currentTime || 0;
+const getDur = () => audio.duration || 0;
+
+function setSrcAndGo(url, keepTime) {
+  const was = playing, t = keepTime ? getPos() : pendingSeek;
+  audio.src = url;
+  audio.loop = loopOn;
+  audio.playbackRate = SPEEDS[speedIdx];
+  pendingSeek = t;
+  if (was) audio.play().catch(()=>{});
+}
+function applyAudioState() {
+  audio.loop = loopOn;
+  audio.playbackRate = SPEEDS[speedIdx];
+}
+
+/* ---------- load song ---------- */
+async function loadSong(idx, autoplay) {
+  curSong = idx;
+  const s = songs[idx];
+  titleEl.textContent = s.name + " · 載入中…";
+  if (!s.lrcText) {
+    try { s.lrcText = await (await fetch(s.file.replace(/\.mp3$/i, ".lrc"))).text(); } catch(e) {}
+  }
+  lines = parseLRC(s.lrcText || "");
+  buildLyrics();
+  lyrOff = parseFloat(localStorage.getItem("lyroff:" + s.file)) || 0;
+  setOffLbl();
+  pendingSeek = 0;
+  setSrcAndGo(key !== 0 ? (blobCache[ck(s.file)] || s.file) : s.file, false);
+  if (key !== 0 && !blobCache[ck(s.file)]) applyKey(key, true);
+  titleEl.textContent = s.name;
+  renderList();
+  updateMediaSession();
+  if (autoplay) audio.play().catch(()=>{});
+  else render(true);
+}
+const ck = f => f + "|" + key;
+
+/* ---------- key control (offline pre-render, cached) ---------- */
+function setKeyUI() {
+  keyLbl.textContent = key === 0 ? "原調" : (key > 0 ? "+" + key : "−" + Math.abs(key));
+  keyLbl.classList.toggle("on", key !== 0);
+}
+async function applyKey(k, silent) {
+  k = Math.max(-8, Math.min(8, k));
+  const token = ++renderToken;
+  key = k; setKeyUI();
+  if (k === 0) { setSrcAndGo(songs[curSong].file, true); return; }
+  const id = songs[curSong].file + "|" + k;
+  if (!blobCache[id]) {
+    keyLbl.textContent = "…";
+    try {
+      blobCache[id] = await renderKeyed(songs[curSong].file, k, p => {
+        keyLbl.textContent = Math.round(p * 100) + "%";
+      });
+    } catch(e) {
+      errEl.style.display = "block";
+      key = 0; setKeyUI(); return;
+    }
+  }
+  if (token !== renderToken) return;                       // a newer tap superseded us
+  setKeyUI();
+  if (!silent) setSrcAndGo(blobCache[id], true);
+}
+keyDown.onclick = () => applyKey(key - 1);
+keyUp.onclick   = () => applyKey(key + 1);
+keyLbl.onclick  = () => applyKey(0);
+
+/* ---------- lyrics ---------- */
+function parseLRC(text) {
+  return text.trim().split("\n").map(l => {
+    const m = l.match(/^\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/);
+    return m ? { t: +m[1]*60 + +m[2], text: m[3].trim() } : null;
+  }).filter(Boolean);
+}
+function buildLyrics() {
+  box.innerHTML = lines.length
+    ? lines.map((l,i)=>`<div class="line${l.text?"":" gap"}" data-i="${i}">${l.text||"♪ ♪ ♪"}</div>`).join("")
+    : `<div class="line active">（此歌暫無歌詞）</div>`;
+  cur = -1;
+  render(true);
+}
+function center(i, instant) {
+  const el = box.children[i]; if (!el) return;
+  wrap.scrollTo({ top: el.offsetTop - wrap.clientHeight/2 + el.clientHeight/2,
+                  behavior: instant ? "auto" : "smooth" });
+}
+function render(force) {
+  if (lines.length) {
+    const t = getPos() + 0.15 + lyrOff;
+    let i = 0; while (i+1 < lines.length && lines[i+1].t <= t) i++;
+    if (i !== cur || force) {
+      cur = i;
+      [...box.children].forEach((el,k)=>el.classList.toggle("active", k===i));
+      if (Date.now() > userScrollUntil) center(i, force);
+    }
+  }
+  const d = getDur();
+  if (!seeking) bar.value = d ? (getPos()/d)*1000 : 0;
+  timeEl.textContent = `${fmt(getPos())} / ${fmt(d)}`;
+}
+function tick() { render(); if (playing && !document.hidden) requestAnimationFrame(tick); }
+
+/* ---------- playlist discovery ---------- */
+async function discover() {
+  try {
+    const html = await (await fetch("./")).text();
+    const hrefs = [...new DOMParser().parseFromString(html,"text/html").querySelectorAll("a")]
+      .map(a => a.getAttribute("href")).filter(Boolean);
+    const mp3s = hrefs.filter(h => /\.mp3$/i.test(h));
+    if (!mp3s.length) return;
+    const clean = h => decodeURIComponent(h).replace(/\.mp3$/i,"")
+      .replace(/\s*\[[^\]]*\]\s*$/,"").replace(/\s*[｜|][^｜|]*$/,"").trim();
+    const have = new Set(PLAYLIST.map(s => s.file));
+    const byName = new Map(PLAYLIST.map(s => [s.name, { ...s }]));
+    for (const mp3 of mp3s) {
+      if (have.has(mp3) || have.has(decodeURIComponent(mp3))) continue;
+      const name = clean(mp3), isKtv = /伴奏|karaoke/i.test(mp3);
+      const ex = byName.get(name);
+      if (ex && (ex.isKtv === undefined || ex.isKtv === isKtv || isKtv)) continue;
+      byName.set(name, { name, file: mp3, isKtv });
+    }
+    songs = [...byName.values()];
+  } catch(e) { /* static hosting → keep hardcoded playlist */ }
+}
+function renderList() {
+  listEl.innerHTML = songs.map((s,i)=>
+    `<li class="${i===curSong?"cur":""}" data-i="${i}">${i===curSong?"▶ ":""}${s.name}</li>`).join("");
+}
+
+/* ---------- controls ---------- */
+playBtn.onclick = () => audio.paused ? audio.play().catch(()=>{}) : audio.pause();
+audio.onplay  = () => { playing = true;  playBtn.textContent = "❚❚"; tick(); updateMediaSession(); };
+audio.onpause = () => { playing = false; playBtn.textContent = "▶"; render(true); };
+audio.ontimeupdate = () => render();                      // fires in background too
+audio.onloadedmetadata = () => { if (pendingSeek > 0 && pendingSeek < audio.duration) audio.currentTime = pendingSeek; render(true); };
+audio.onerror = () => errEl.style.display = "block";
+
+bar.oninput  = () => seeking = true;
+bar.onchange = () => { audio.currentTime = (bar.value/1000)*getDur(); seeking = false; };
+
+box.onclick = e => {
+  const el = e.target.closest(".line");
+  if (el && lines[+el.dataset.i]) { audio.currentTime = lines[+el.dataset.i].t - lyrOff; audio.play().catch(()=>{}); }
+};
+
+speedBtn.onclick = () => {
+  speedIdx = (speedIdx+1) % SPEEDS.length;
+  applyAudioState();
+  speedBtn.textContent = SPEEDS[speedIdx] + "×";
+  speedBtn.classList.toggle("on", SPEEDS[speedIdx] !== 1);
+};
+loopBtn.onclick = () => { loopOn = !loopOn; applyAudioState(); loopBtn.classList.toggle("on", loopOn); };
+
+/* lyric sync fine-tune — per song, persisted */
+function setOffLbl() { lyrLbl.textContent = (lyrOff >= 0 ? "+" : "") + lyrOff.toFixed(2) + "s"; }
+function adjOff(d) {
+  lyrOff = Math.round((lyrOff + d) * 100) / 100;
+  try { localStorage.setItem("lyroff:" + songs[curSong].file, lyrOff); } catch(e) {}
+  setOffLbl(); render(true);
+}
+lyrMinus.onclick = () => adjOff(-0.25);
+lyrPlus.onclick  = () => adjOff(0.25);
+lyrReset.onclick = () => adjOff(-lyrOff);
+
+/* lock-screen / control-center integration */
+function updateMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: songs[curSong].name, artist: "卡拉OK", album: "Karaoke" });
+    navigator.mediaSession.setActionHandler("play",  () => audio.play());
+    navigator.mediaSession.setActionHandler("pause", () => audio.pause());
+    navigator.mediaSession.setActionHandler("seekbackward", () => audio.currentTime -= 10);
+    navigator.mediaSession.setActionHandler("seekforward", () => audio.currentTime += 10);
+  } catch(e) {}
+}
+
+/* fullscreen */
+const fsBtn = document.getElementById("fsBtn");
+if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
+  fsBtn.hidden = false;
+  fsBtn.onclick = () => {
+    const d = document.documentElement, doc = document;
+    if (doc.fullscreenElement || doc.webkitFullscreenElement)
+      (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+    else
+      (d.requestFullscreen || d.webkitRequestFullscreen).call(d);
+  };
+}
+
+/* song picker */
+document.getElementById("pickBtn").onclick = () => { renderList(); sheet.classList.add("show"); };
+document.getElementById("closeSheet").onclick = () => sheet.classList.remove("show");
+sheet.onclick = e => { if (e.target === sheet) sheet.classList.remove("show"); };
+listEl.onclick = e => {
+  const li = e.target.closest("li"); if (!li) return;
+  sheet.classList.remove("show");
+  if (+li.dataset.i !== curSong) loadSong(+li.dataset.i, true);
+};
+
+/* don't fight user scrolling */
+["touchstart","pointerdown","wheel"].forEach(ev =>
+  wrap.addEventListener(ev, () => userScrollUntil = Date.now()+2500, {passive:true}));
+["resize","orientationchange","load"].forEach(ev =>
+  window.addEventListener(ev, () => setTimeout(() => render(true), 300)));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) render(true); });
+
+/* ---------- start ---------- */
+(async () => { await discover(); loadSong(0, false); })();
+</script>
+</body>
+</html>
